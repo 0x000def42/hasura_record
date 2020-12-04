@@ -6,6 +6,8 @@ module HasuraRecord
 
   class Base
 
+    include ActiveModel::Model
+
     def self.resource_name
       @resource_name ||= self.name.underscore.pluralize
     end
@@ -16,8 +18,18 @@ module HasuraRecord
       .select {|field| field["type"]["kind"] != "OBJECT"}
     end
 
+    def save
+      # TODO
+    end
+
     def self.fields
-      @fields ||= fields_meta.map{|field| field["name"] }
+      @fields ||= begin 
+        _fields = fields_meta.map{|field| field["name"] }
+        _fields.each do |field|
+          attr_accessor field
+        end
+        _fields
+      end
     end
 
     def self.find_by params
@@ -43,30 +55,43 @@ module HasuraRecord
         .gsub("$resource", resource_name)
         .gsub("$fields", fields.join(" "))
         .gsub("$query", query_params )
-
-        Kernel.const_set(:LOCAL_REQUEST, Client.parse(res))
-        result = Client.query(LOCAL_REQUEST)
-        if result.errors
+        Kernel.const_set(:LOCAL_REQUEST, Client.client.parse(res))
+        result = Client.client.query(LOCAL_REQUEST)
+   
+        if !result.data.send(resource_name)
           raise result.errors.messages["data"][0]
         else
-          result.data.send(resource_name)[0]
+          elem = result.data.send(resource_name)[0]
+          if elem
+            self.new(elem.to_h)
+          else
+            nil
+          end
         end
       end
     end
   end
 
-  HTTP = GraphQL::Client::HTTP.new("http://hasura:8080/v1/graphql") do
-    def headers(context)
-      { "x-hasura-admin-secret": "secret" }
+  module Client
+    def self.client
+      @client ||= GraphQL::Client.new(schema: schema, execute: http)
+    end
+
+    def self.http
+      @http ||= GraphQL::Client::HTTP.new("http://hasura:8080/v1/graphql") do
+        def headers(context)
+          { "x-hasura-admin-secret": "secret" }
+        end
+      end
+    end
+
+    def self.schema
+      @schema ||= GraphQL::Client.load_schema(http)
     end
   end
 
   def self.types
-    @types ||= JSON.parse(HasuraRecord::Schema.to_json)["data"]["__schema"]["types"]
+    @types ||= JSON.parse(Client.schema.to_json)["data"]["__schema"]["types"]
   end
-
-  
-  Schema = GraphQL::Client.load_schema(HTTP)
-  Client = GraphQL::Client.new(schema: Schema, execute: HTTP)
 
 end
