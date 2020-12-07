@@ -7,6 +7,7 @@ module HasuraRecord
   class Base
 
     include ActiveModel::Model
+    include ActiveModel::Dirty
 
     def self.resource_name
       @resource_name ||= self.name.underscore.pluralize
@@ -26,7 +27,19 @@ module HasuraRecord
       @fields ||= begin 
         _fields = fields_meta.map{|field| field["name"] }
         _fields.each do |field|
-          attr_accessor field
+          self.class_eval <<-EVAL
+
+            define_attribute_methods :#{field}
+
+            def #{field}
+              @#{field}
+            end
+
+            def #{field}= value
+              #{field}_will_change! unless value == @#{field}
+              @#{field} = value
+            end
+          EVAL
         end
         _fields
       end
@@ -63,7 +76,9 @@ module HasuraRecord
         else
           elem = result.data.send(resource_name)[0]
           if elem
-            self.new(elem.to_h)
+            res = self.new(elem.to_h)
+            res.clear_changes_information
+            res
           else
             nil
           end
