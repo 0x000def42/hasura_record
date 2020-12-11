@@ -55,8 +55,6 @@ module HasuraRecord
       @fields ||= begin
         if Schema.instance.initialized?
           Schema.instance.fields_for(resource_name).tap do |fields|
-            p fields
-            p "!!!!!!!!!!!!!!!"
             fields.each do |field|
               self.class_eval <<-EVAL
 
